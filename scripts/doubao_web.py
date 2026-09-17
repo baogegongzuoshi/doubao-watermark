@@ -30,15 +30,15 @@ HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover">
 <title>豆包解析 · 本地结果</title>
 <style>
 :root{--bg:#f5f6f8;--card:#fff;--ink:#1c1e21;--sub:#65676b;--line:#e4e6eb;--acc:#3b82f6;--ok:#16a34a;--warn:#d97706}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:14px}
 .wrap{max-width:1200px;margin:0 auto}
-.bar{display:flex;gap:8px;margin-bottom:12px}
-.bar input{flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:13px;background:#fff}
+.bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.bar input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:13px;background:#fff}
 .bar button{white-space:nowrap}
 #btnClear{padding:8px 13px;font-size:15px;font-weight:700;line-height:1}
 #pasteBox{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:98}
@@ -51,13 +51,13 @@ button.gray{background:#e4e6eb;color:var(--ink)}
 button.ok{background:var(--ok)}
 button.warn{background:var(--warn)}
 button:disabled{opacity:.5;cursor:wait}
-.tabs{display:flex;gap:10px;margin-bottom:10px}
+.tabs{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 .tab{padding:11px 44px;border-radius:12px;background:#e4e6eb;color:var(--sub);cursor:pointer;font-size:15px;font-weight:600;user-select:none;text-align:center;min-width:150px}
 .tab.on{background:var(--acc);color:#fff}
-.toolbar{display:flex;align-items:center;margin-bottom:12px}
+.toolbar{display:flex;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px}
 .toolbar .hint{flex:1;color:var(--sub);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fbar{display:flex;align-items:center;margin-bottom:10px;font-size:13px}
-.fbar .fleft{flex:1;color:var(--sub)}
+.fbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-bottom:10px;font-size:13px}
+.fbar .fleft{flex:1;min-width:0;color:var(--sub)}
 .fbar .fleft b{color:var(--ink);font-weight:600}
 .fbar .fleft .chip{margin-left:8px}
 .fbar .fright{display:flex;gap:8px;align-items:center}
@@ -87,7 +87,46 @@ button:disabled{opacity:.5;cursor:wait}
 #lb .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);font-size:22px;width:46px;height:46px;padding:0;border-radius:50%}
 #lb .prev{left:10px}#lb .next{right:10px}
 #lb .cnt{color:#fff;font-size:12px;margin-top:8px}
-@media(max-width:600px){.grid{grid-template-columns:repeat(2,1fr)}.card .media{height:150px}.tab{padding:10px 24px;min-width:0;flex:1}}
+/* ===== 移动端适配 ===== */
+@media(max-width:600px){
+  body{padding:10px 8px calc(10px + env(safe-area-inset-bottom))}
+  /* 输入区：链接独占一行，按钮第二行 */
+  .bar{gap:6px}
+  .bar input{flex:1 1 100%;font-size:16px;padding:10px 12px} /* 16px 防 iOS 聚焦自动放大 */
+  #btnClear,#btnPaste,#btnParse{padding:10px 18px;font-size:14px}
+  /* 筛选栏：两行自然换行，触摸目标加大 */
+  .fbar{font-size:13px}
+  .chip{padding:8px 14px;font-size:13px}
+  .fbar select{padding:8px 10px;font-size:13px}
+  /* 选项卡：均分一行 */
+  .tab{flex:1;min-width:0;padding:12px 0;font-size:14px}
+  /* 一键下载行 */
+  .toolbar button{padding:10px 16px;font-size:13px}
+  .toolbar .hint{flex-basis:100%;white-space:normal}
+  /* 网格：宽屏两列，窄屏一列 */
+  .grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .card .media{height:140px}
+  .card .meta{font-size:11px}
+  .card .btns button{padding:9px 0;font-size:12px}
+  .media .zoom{padding:8px 16px;font-size:14px} /* 视频放大角标加大触摸面积 */
+  /* 灯箱：手机上铺满全屏，隐藏箭头（滑动切换） */
+  #lbImg{width:100vw;height:calc(100vh - 130px);max-width:none;max-height:none;object-fit:contain}
+  #lbVid{width:100vw;height:calc(100vh - 130px);max-width:none;max-height:none;object-fit:contain}
+  #lb .nav{display:none}
+  #lb .lbbar{margin-top:10px}
+  #lb .lbbar button{padding:12px 22px;font-size:15px}
+  #lb .close{top:max(10px,env(safe-area-inset-top))}
+  #lb .cnt{margin-top:6px}
+}
+@media(max-width:380px){
+  .grid{grid-template-columns:1fr}
+  .card .media{height:200px}
+}
+/* 横屏手机：灯箱留出底部操作行 */
+@media(max-height:450px){
+  #lbImg,#lbVid{height:calc(100vh - 96px)}
+  #lb .lbbar button{padding:8px 18px}
+}
 </style>
 </head>
 <body>
@@ -409,6 +448,17 @@ async function updateLb(){
   }
 }
 function lbNav(d){const n=curList().length;lbIdx=(lbIdx+d+n)%n;updateLb();}
+/* 手机滑动切换（灯箱打开时生效） */
+let lbTX=0,lbTY=0;
+document.addEventListener('touchstart',e=>{
+  if($('#lb').style.display!=='flex')return;
+  lbTX=e.touches[0].clientX;lbTY=e.touches[0].clientY;
+},{passive:true});
+document.addEventListener('touchend',e=>{
+  if($('#lb').style.display!=='flex')return;
+  const dx=e.changedTouches[0].clientX-lbTX,dy=e.changedTouches[0].clientY-lbTY;
+  if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)lbNav(dx<0?1:-1);
+},{passive:true});
 async function lbDl(){
   const it=curList()[lbIdx];
   const num=lbIdx+1;
