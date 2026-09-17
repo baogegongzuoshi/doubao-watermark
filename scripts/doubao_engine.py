@@ -7,7 +7,7 @@ doubao_engine.py — 豆包分享链接无水印解析/下载引擎（纯标准�
   - 视频: 提取 fallback_api -> 改参数 logo_type=unwatermarked&codec_type=8 请求
           -> 用 key_seed 解码 main_url 得到无水印直链
 子命令:
-  scan     解析分享链接，输出清单 JSON（按时间从近到远排序）
+  scan     解析分享链接，输出清单 JSON（按生成时间从旧到新排序）
   download 按 scan 的结果下载（支持时间过滤/类型过滤/指定 id）
   mp4      无损规整为 mp4（ffmpeg remux；可选转码 H.264 提升兼容性）
 """
@@ -410,9 +410,9 @@ def parse_share(share_url):
         images, videos = _regex_fallback(html_text)
     images = _dedupe(images)
     videos = _dedupe(videos)
-    # 时间从近到远排序（无时间的排后面）
-    images.sort(key=lambda x: x.get("epoch") or 0, reverse=True)
-    videos.sort(key=lambda x: x.get("epoch") or 0, reverse=True)
+    # 时间从旧到新排序（生成时间早的在前；无时间的排最后）
+    images.sort(key=lambda x: x.get("epoch") or 0)
+    videos.sort(key=lambda x: x.get("epoch") or 0)
     return {"share_name": share_name, "share_url": share_url,
             "image_count": len(images), "video_count": len(videos),
             "images": images, "videos": videos}
@@ -523,7 +523,7 @@ def _brief(items, kind):
 def cmd_scan(args):
     r = parse_share(args.url)
     print(f"分享标题: {r['share_name']}")
-    print(f"图片: {r['image_count']} 张 | 视频: {r['video_count']} 个（已按时间从近到远排序）")
+    print(f"图片: {r['image_count']} 张 | 视频: {r['video_count']} 个（已按生成时间从旧到新排序）")
     if r["images"]:
         print("--- 图片清单（近 -> 远）---")
         print("\n".join(_brief(r["images"], "image")))
@@ -649,7 +649,7 @@ def main():
     p.add_argument("--since", help='起始时间 "2026-09-17 08:00"')
     p.add_argument("--until", help="截止时间")
     p.add_argument("--ids", help="仅下载指定 id，逗号分隔")
-    p.add_argument("--limit", type=int, help="只下前 N 个（按时间从近到远）")
+    p.add_argument("--limit", type=int, help="只下前 N 个（按生成时间从旧到新）")
     p.add_argument("--best", action="store_true", help="视频选最高分辨率（可能为 H.265）")
     p.set_defaults(func=cmd_download)
 

@@ -103,8 +103,8 @@ def cmd_download(args):
             skipped.append((it, v.get("reason", "")))
         else:
             keep.append(it)
-    # 近 -> 远
-    keep.sort(key=lambda x: x.get("epoch") or 0, reverse=True)
+    # 旧 -> 新（生成时间早的在前）
+    keep.sort(key=lambda x: x.get("epoch") or 0)
     print(f"通过 {len(keep)} 项, 跳过 {len(skipped)} 项")
     for it, why in skipped:
         print(f"  ⏭ skip [{it.get('time')}] {it['kind']} id={it.get('id')} 理由: {why[:80]}")
