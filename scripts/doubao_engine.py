@@ -454,6 +454,29 @@ def _regex_fallback(html_text):
     return images, videos
 
 
+def resolve_video_variants(fallback_api):
+    """解码全部清晰度变体，按分辨率从高到低返回：[{url, codec, w, h, size, bitrate}]。"""
+    api = build_unwatermarked_api(fallback_api)
+    payload = json.loads(http_get(api, timeout=30))
+    vi = payload.get("video_info") or (payload.get("data") or {}).get("video_info") or payload
+    data = vi.get("data") or vi if isinstance(vi, dict) else {}
+    vlist = data.get("video_list") if isinstance(data, dict) else None
+    entries = [e for e in (vlist.values() if isinstance(vlist, dict) else (vlist or []))
+               if isinstance(e, dict) and (e.get("main_url") or e.get("play_url"))]
+    key_seed = data.get("key_seed") or vi.get("key_seed") or ""
+    out = []
+    for e in entries:
+        url = decode_main_url(str(e.get("main_url") or e.get("play_url")).strip(), key_seed)
+        if not url:
+            continue
+        out.append({"url": url, "codec": str(e.get("codec_type") or "").lower(),
+                    "w": int(e.get("vwidth") or 0), "h": int(e.get("vheight") or 0),
+                    "size": int(e.get("size") or 0),
+                    "bitrate": int(e.get("real_bitrate") or e.get("bitrate") or 0)})
+    out.sort(key=lambda x: -(x["w"] * x["h"]))
+    return out
+
+
 def resolve_video_url(video, prefer_h264=True):
     """通过 fallback_api 拿无水印直链；prefer_h264=True 时优先 H.264（播放兼容性最好）。"""
     api = build_unwatermarked_api(video["fallback_api"])
@@ -651,6 +674,7 @@ def main():
     p.add_argument("--ids", help="仅下载指定 id，逗号分隔")
     p.add_argument("--limit", type=int, help="只下前 N 个（按生成时间从旧到新）")
     p.add_argument("--best", action="store_true", help="视频选最高分辨率（可能为 H.265）")
+    p.add_argument("--yes", action="store_true", help="确认执行（配合先 scan 后 download 的流程使用，直接下载）")
     p.set_defaults(func=cmd_download)
 
     p = sub.add_parser("mp4", help="视频无损规整为 mp4 / 可选转码 H.264")
