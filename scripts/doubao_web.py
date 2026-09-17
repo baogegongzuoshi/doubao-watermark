@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -56,11 +57,8 @@ button:disabled{opacity:.5;cursor:wait}
 .tab.on{background:var(--acc);color:#fff}
 .toolbar{display:flex;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px}
 .toolbar .hint{flex:1;color:var(--sub);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-bottom:10px;font-size:13px}
-.fbar .fleft{flex:1;min-width:0;color:var(--sub)}
-.fbar .fleft b{color:var(--ink);font-weight:600}
-.fbar .fleft .chip{margin-left:8px}
-.fbar .fright{display:flex;gap:8px;align-items:center}
+.fbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin:2px 0 12px;font-size:13px}
+.fbar .flabel{color:var(--sub);margin-right:2px}
 .chip{padding:5px 12px;border-radius:14px;background:#e4e6eb;color:var(--sub);cursor:pointer;font-size:12px;user-select:none}
 .chip.on{background:var(--acc);color:#fff}
 .fbar select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12.5px;background:#fff;color:var(--ink)}
@@ -72,7 +70,10 @@ button:disabled{opacity:.5;cursor:wait}
 .card img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in}
 .card video{max-width:100%;max-height:100%}
 .badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;border-radius:6px;padding:1px 7px}
-.media .zoom{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;border-radius:6px;padding:2px 9px;cursor:pointer;user-select:none}
+.vinfo{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 9px;font-size:11px;color:var(--ink2,#667);background:var(--card);white-space:nowrap}
+.vinfo .zoomlink{cursor:pointer;user-select:none;color:var(--acc);flex:none}
+body.hidevid #main .card .media{visibility:hidden!important} /* 整个媒体区隐藏：原生视频+海报+播放按钮全遮住 */
+/* 视频卡片的角标/放大已移到 .vinfo 行（原生视频图层会盖住浮层元素） */
 .card .meta{padding:7px 10px 2px;font-size:11.5px;color:var(--sub)}
 .card .btns{padding:6px 10px 10px;display:flex;gap:6px}
 .card .btns button{flex:1;padding:6px 0;font-size:12px}
@@ -92,9 +93,10 @@ button:disabled{opacity:.5;cursor:wait}
 body.home #logo{display:block}
 #logo .appname{font-size:24px;font-weight:700;margin-top:14px;letter-spacing:1px}
 #logo .appsub{font-size:13px;color:var(--sub);margin-top:6px}
+.ver{font-size:10px;color:var(--sub);opacity:.55;margin-top:8px}
 body.home .wrap{padding-top:0}
 body.home .bar{max-width:620px;margin:0 auto 14px;flex-wrap:nowrap}
-body.home .bar input{border:2px solid var(--acc);font-size:15px;padding:13px 16px;box-shadow:0 4px 18px rgba(47,107,255,.18)}
+body.home .bar input{border:2px solid var(--acc);font-size:16px;padding:13px 16px;box-shadow:0 4px 18px rgba(47,107,255,.18)}
 body.home .bar input:focus{box-shadow:0 4px 22px rgba(47,107,255,.32)}
 body.home #btnClear,body.home #btnPaste{padding:12px 16px}
 body.home #btnParse{background:linear-gradient(135deg,#2f6bff,#7a3cff);padding:12px 24px;font-size:15px;font-weight:600;box-shadow:0 4px 16px rgba(47,107,255,.35)}
@@ -102,6 +104,42 @@ body.home #mTip{max-width:620px;margin:0 auto 12px}
 body.home #logo{animation:pop .45s ease}
 @keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
+/* ===== 多选下载选择页（参考豆包"保存图片"页） ===== */
+#picker{position:fixed;inset:0;background:var(--bg);z-index:97;display:none;flex-direction:column}
+.pkhead{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--card);border-bottom:1px solid var(--line)}
+.pkhead .pkclose{width:34px;height:34px;padding:0;font-size:20px;line-height:1;border-radius:50%}
+.pktitle{flex:1;text-align:center;font-size:16px;font-weight:600;margin-right:34px}
+.pkall{color:var(--acc);font-size:14px;cursor:pointer;user-select:none;padding:4px 2px}
+.pkgrid{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;padding:12px;align-content:start}
+.pktile{position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:1/1;cursor:pointer}
+.pktile img{width:100%;height:100%;object-fit:cover;display:block}
+.pkvph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;background:#26282c}
+.pkdim{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.65));color:#fff;font-size:9.5px;text-align:center;padding:12px 2px 3px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:16px;box-sizing:border-box;line-height:16px}
+.pkck{position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);color:#fff;font-size:14px;line-height:20px;text-align:center;box-sizing:border-box}
+.pktile.sel .pkck{background:var(--acc);border-color:var(--acc)}
+.pktile.sel{outline:2px solid var(--acc);outline-offset:-2px}
+.pkfoot{padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex}
+.pkfoot button{flex:1;padding:13px 0;font-size:15px;font-weight:600}
+.pktip{padding:9px 14px;font-size:12px;line-height:1.6;color:#5a4a00;background:#fff8dc;border-top:1px solid #efe3ad}
+.pkhint{padding:7px 14px 0;font-size:11px;color:var(--sub);text-align:center;line-height:1.7}
+.dlhint{margin-top:10px;padding:8px 12px;font-size:11px;color:var(--sub);text-align:center;line-height:1.7;background:rgba(127,127,127,.06);border-radius:10px}
+.disclaimer{margin-top:16px;padding:0 10px;font-size:10px;color:var(--sub);text-align:center;line-height:1.6;opacity:.85}
+.pktip .pkrow{display:flex;align-items:center;gap:8px;margin:5px 0;padding:7px 8px;background:rgba(255,255,255,.75);border:1px solid #d8c878;border-radius:9px}
+.pktip .pkrow .pkname{flex:1;font-size:11px;color:#5a4a00;word-break:break-all}
+.pktip .pkrow a.pkdlbtn{flex:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;color:#fff;text-decoration:none;background:linear-gradient(135deg,#2f6bff,#22b1ff);box-shadow:0 1px 6px rgba(47,107,255,.3)}
+.pktip .pkrow a.pkdlbtn:active{filter:brightness(.85)}
+.pktip .pkfb{display:block;width:100%;margin-top:8px;padding:9px 0;border:none;border-radius:9px;font-size:13px;font-weight:600;color:#fff;background:linear-gradient(135deg,#2f6bff,#22b1ff)}
+button.blue{background:linear-gradient(135deg,#2f6bff,#22b1ff);color:#fff;box-shadow:0 2px 10px rgba(47,107,255,.28)}
+button.blue.busy,button.ok.busy{filter:brightness(1.12);animation:pulse 1s ease infinite}
+@keyframes pulse{50%{filter:brightness(.88)}}
+.pkempty{grid-column:1/-1;text-align:center;color:var(--sub);font-size:13px;padding:40px 10px}
+.pkempty .pklink{color:var(--acc);cursor:pointer;user-select:none;text-decoration:underline}
+/* 解析 0/0 警示页 */
+.zero{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:26px 18px;margin:14px 0;text-align:center}
+.zero .zt{font-size:16px;font-weight:600;margin-bottom:10px}
+.zero .zs{color:var(--sub);font-size:12.5px;line-height:1.8;margin-bottom:10px}
+.zero .zd{color:#8a6d1a;background:#fff8e6;border:1px solid #ffe9b3;border-radius:8px;font-size:11px;padding:6px 10px;margin-bottom:14px;word-break:break-all}
+.zero button{padding:11px 26px;font-size:14px}
 /* ===== 移动端适配 ===== */
 @media(max-width:600px){
   body{padding:10px 8px calc(10px + env(safe-area-inset-bottom))}
@@ -114,21 +152,32 @@ body.home #logo{animation:pop .45s ease}
   .bar{gap:6px}
   .bar input{flex:1 1 100%;font-size:16px;padding:10px 12px} /* 16px 防 iOS 聚焦自动放大 */
   #btnClear,#btnPaste,#btnParse{padding:10px 18px;font-size:14px}
-  /* 筛选栏：两行自然换行，触摸目标加大 */
-  .fbar{font-size:13px}
-  .chip{padding:8px 14px;font-size:13px}
-  .fbar select{padding:8px 10px;font-size:13px}
+  /* 筛选栏：单行流式排列，档位自动缩小 */
+  .fbar{gap:6px;font-size:12.5px}
+  .fbar .flabel{margin-right:0}
+  .chip{padding:6px 11px;font-size:12.5px}
+  .fbar select{padding:5px 8px;font-size:16px} /* ≥16px 防 iOS 聚焦自动放大 */
+  #ptext{font-size:16px}
   /* 选项卡：均分一行 */
+  .tabs{margin-bottom:12px}
   .tab{flex:1;min-width:0;padding:12px 0;font-size:14px}
   /* 一键下载行 */
+  .toolbar{margin-bottom:14px}
   .toolbar button{padding:10px 16px;font-size:13px}
   .toolbar .hint{flex-basis:100%;white-space:normal}
+  /* 卡片留白 */
+  .card .meta{padding:8px 10px 2px;line-height:1.5}
+  .card .btns{padding:6px 10px 12px}
   /* 网格：宽屏两列，窄屏一列 */
   .grid{grid-template-columns:repeat(2,1fr);gap:8px}
   .card .media{height:140px}
   .card .meta{font-size:11px}
   .card .btns button{padding:9px 0;font-size:12px}
-  .media .zoom{padding:8px 16px;font-size:14px} /* 视频放大角标加大触摸面积 */
+  /* 遮罩打开时隐藏背景视频：iOS 原生视频图层会穿透任意 z-index 的浮层 */
+  body.hidevid #main .card .media{visibility:hidden!important} /* 整个媒体区隐藏：原生视频+海报+播放按钮全遮住 */
+  /* 多选下载选择页：手机 3 列网格 */
+  .pkgrid{grid-template-columns:repeat(3,1fr);gap:6px;padding:10px}
+  .pkfoot{padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
   /* 灯箱：手机上铺满全屏，隐藏箭头（滑动切换） */
   #lbImg{width:100vw;height:calc(100vh - 130px);max-width:none;max-height:none;object-fit:contain}
   #lbVid{width:100vw;height:calc(100vh - 130px);max-width:none;max-height:none;object-fit:contain}
@@ -160,8 +209,9 @@ body.home #logo{animation:pop .45s ease}
       <path d="M32 15c7.5 8.5 11.5 13.2 11.5 18.8a11.5 11.5 0 1 1-23 0C20.5 28.2 24.5 23.5 32 15z" fill="#fff"/>
       <line x1="15" y1="51" x2="49" y2="13" stroke="#ff5a5a" stroke-width="5" stroke-linecap="round" opacity=".92"/>
     </svg>
-    <div class="appname">豆包无水印解析</div>
-    <div class="appsub">粘贴豆包分享链接 · 一键提取图片和视频 · 原画质无水印</div>
+    <div class="appname">无水印解析</div>
+    <div class="appsub">粘贴DB分享链接 · 一键提取图片和视频 · 原画质无水印</div>
+    <div class="ver">v20260918h</div>
   </div>
   <div class="bar">
     <input id="url" placeholder="https://www.doubao.com/thread/...">
@@ -170,6 +220,7 @@ body.home #logo{animation:pop .45s ease}
     <button id="btnParse" onclick="doParse()">解析</button>
   </div>
   <div class="tip" id="mTip"></div>
+  <div class="dlhint">📱 苹果手机：点下载后跳转分享，点「保存到视频」→ 相册可找到<br>💻 win/mac/安卓：在浏览器下载或「下载文件」里找到视频</div>
   <div id="pasteBox" onclick="if(event.target===this)hidePaste()">
     <div class="pbox">
       <div class="ptitle">粘贴链接（Ctrl+V / 长按粘贴）</div>
@@ -178,6 +229,18 @@ body.home #logo{animation:pop .45s ease}
     </div>
   </div>
   <div id="main"></div>
+  <div class="disclaimer">本工具仅供交流学习使用，不得用于商业用途；所解析内容的版权归原作者所有，如有侵权请联系删除。</div>
+</div>
+<div id="picker">
+  <div class="pkhead">
+    <button class="gray pkclose" onclick="hidePicker()">×</button>
+    <div class="pktitle" id="pkTitle">保存图片</div>
+    <span class="pkall" id="pkAll" onclick="toggleAll()">全选</span>
+  </div>
+  <div class="pkgrid" id="pkGrid"></div>
+  <div class="pktip" id="pkTip" style="display:none"></div>
+  <div class="pkhint">📱 仅苹果手机用「批量分享」进相册 · 💻 win/mac/安卓用「批量下载」<br>苹果：点下载后跳转分享 → 点「保存到视频」→ 相册可找到　|　win/mac/安卓：在浏览器下载/下载文件里找到视频</div>
+  <div class="pkfoot"><button class="ok" id="pkShare" onclick="doPickShare()">📤 批量分享</button><button class="blue" id="pkDl" onclick="doPickDownload()">⬇ 批量下载</button></div>
 </div>
 <div id="lb" onclick="if(event.target===this)hideLb()">
   <button class="close" onclick="hideLb()">×</button>
@@ -191,7 +254,7 @@ body.home #logo{animation:pop .45s ease}
 <script>
 const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const isMobile=isIOS||/Android|Mobile/i.test(navigator.userAgent);
-let DATA=null,tab='image',lbIdx=0,timeFilter=0;
+let DATA=null,tab='image',lbIdx=0,timeFilter=0,forceFresh=false;
 const $=s=>document.querySelector(s);
 // 当前选项卡按时间筛选后的列表（timeFilter=0 表示全部）
 function curList(){
@@ -201,7 +264,7 @@ function curList(){
   return l.filter(it=>(it.epoch||0)*1000>=cut);
 }
 function setFilter(m){timeFilter=m;render();try{localStorage.setItem('dw_filter',m);}catch(e){}}
-if(isMobile){const t=$('#mTip');t.style.display='block';t.innerHTML=isIOS?'📱 iOS：点「⬇ 下载」→ 弹出分享面板 → 点「存储图像 / 存储视频」直接进相册。':'🤖 Android：点「⬇ 下载」保存到「下载」目录，相册里直接能看到；图片也可以长按 →「保存图片」进相册。';}
+if(isMobile){const t=$('#mTip');t.style.display='block';t.innerHTML=isIOS?'📱 iOS：进相册推荐用「批量分享」→ 分享面板「存储图像 / 存储视频」；「批量下载」交给当前浏览器（QQ/夸克/Safari 等）自带的下载功能，完成后在选择页会提示各浏览器下载管理的位置。视频自动转标准 mp4。':'🤖 Android：「批量下载」交给当前浏览器（QQ/夸克/Safari 等）自带的下载功能，文件在浏览器的「下载管理」里，QQ/夸克可「保存到相册」；首次会询问"允许下载多个文件"请点允许；「批量分享」调起分享面板；视频自动转标准 mp4。';}
 window.addEventListener('DOMContentLoaded',()=>{
   const q=new URLSearchParams(location.search);
   const qu=q.get('url');
@@ -211,13 +274,16 @@ window.addEventListener('DOMContentLoaded',()=>{
     $('#url').value=qu;doParse();
     return;
   }
-  // 刷新恢复：上次链接 + 选项卡 + 时间筛选（服务端有解析缓存，秒回）
+  // 会话内刷新恢复：仅当本次会话正在浏览结果时才自动恢复解析（服务端缓存秒回）
+  // 关掉页面重开、或点过 × 清空后，不再强制回到旧解析，只把上次链接预填在输入框
   try{
     const su=localStorage.getItem('dw_lastUrl');
     if(su&&su.includes('/thread/')){
+      const active=sessionStorage.getItem('dw_active')==='1';
       const st=localStorage.getItem('dw_tab');if(st==='video')tab='video';
       timeFilter=+localStorage.getItem('dw_filter')||0;
-      $('#url').value=su;doParse();
+      $('#url').value=su;
+      if(active)doParse(true); // 刷新恢复：保留筛选档位；非会话内只预填链接，停在主页等用户点解析
     }
   }catch(e){}
 });
@@ -225,24 +291,65 @@ window.addEventListener('DOMContentLoaded',()=>{
 function fmtSize(n){if(!n)return '';const u=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<3){n/=1024;i++;}return n.toFixed(i===0||n>=100?0:1)+u[i];}
 function fmtCodec(c){c=(c||'').toLowerCase();return c.includes('265')||c.includes('hevc')||c.includes('bytevc')?'H.265':c.includes('264')||c==='h264'?'H.264':(c?c.toUpperCase():'');}
 
-async function doParse(){
-  const u=$('#url').value.trim();
+async function doParse(keepFilter){
+  let u=$('#url').value.trim();
   if(!u){clearUrl();return;} // 空链接：静默回到主页，不弹提醒
-  if(!u.includes('/thread/')){alert('链接需包含 /thread/');return;}
+  // 从分享口令文本中自动提取链接（豆包 App 复制的往往是一整段文字，可能混有其他链接，优先取豆包的）
+  const urls=u.match(/https?:..[^ ]+/g)||[];
+  const hit=urls.find(x=>x.includes('doubao.com'))||urls.find(x=>x.includes('/thread/'))||'';
+  if(hit){u=hit.replace(/[^a-zA-Z0-9%._~=?&/-]+$/,'');}
+  $('#url').value=u; // 回填规范化后的链接
+  if(!u.includes('/thread/')){showErr('链接格式不对','链接需包含 /thread/（请从豆包分享面板复制链接）');return;}
   try{localStorage.setItem('dw_lastUrl',u);}catch(e){}
   const btn=$('#btnParse');
   btn.disabled=true;const oldTxt=btn.textContent;btn.textContent='解析中…';
   $('#main').innerHTML='';
   try{
-    const r=await fetch('/api/scan?url='+encodeURIComponent(u));
+    const r=await fetch('/api/scan?url='+encodeURIComponent(u)+(forceFresh?'&fresh=1':''));
+    forceFresh=false;
     DATA=await r.json();
-    if(DATA.error){alert('解析失败：'+DATA.error);return;}
+    if(DATA.error){showErr('解析失败',DATA.error,DATA.retry_hint);return;}
+    // 记录全量列表下标：多选下载打 zip 时按此下标传给服务端 sel 参数
+    (DATA.images||[]).forEach((it,i)=>it._fi=i);
+    (DATA.videos||[]).forEach((it,i)=>it._fi=i);
+    // 时间筛选规则：刷新恢复解析时保留所选档位；用户主动点解析/粘贴新链接时重置为"全部"
+    // （筛选档存在 localStorage 全局生效，残留档位会把新解析内容全部筛成 0）
+    if(!keepFilter&&timeFilter){timeFilter=0;try{localStorage.setItem('dw_filter','0');}catch(e){}}
+    if(!DATA.image_count&&!DATA.video_count){ // 0/0：豆包间歇性空壳页很常见，先自动跳过缓存重试一次
+      if(!forceFresh){
+        btn.textContent='内容没取全，自动重试中…';
+        await new Promise(r=>setTimeout(r,1500));
+        forceFresh=true;
+        return doParse(keepFilter);
+      }
+      document.body.classList.remove('home');
+      try{sessionStorage.removeItem('dw_active');}catch(e){}
+      $('#main').innerHTML=`<div class="zero">
+        <div class="zt">⚠️ 没有解析到图片或视频</div>
+        <div class="zs">豆包现在会间歇性返回"空壳页"（反爬策略：页面在、内容没给），这不是链接坏了——点下方「重试解析」一两次通常就能解析出来。<br>如果重试 3 次以上仍是 0，才可能是内容已过期/被删除，可把链接发到浏览器里直接打开确认。</div>
+        ${DATA.debug?`<div class="zd">诊断：${JSON.stringify(DATA.debug)}</div>`:''}
+        <button class="ok" onclick="forceFresh=true;doParse()">↻ 重试解析（跳过缓存）</button>
+      </div>`;
+      return;
+    }
     render();
     prefetchImgs();
     loadSizes();
     document.body.classList.remove('home'); // 进入结果页
-  }catch(e){alert('解析失败：'+e);}
-  btn.disabled=false;btn.textContent=oldTxt;
+    try{sessionStorage.setItem('dw_active','1');}catch(e){}
+  }catch(e){showErr('网络异常',String(e),true);}
+  finally{btn.disabled=false;btn.textContent=oldTxt;}
+}
+
+// 页内错误页：显示报错原文（可截图反馈）+ 重试按钮，不再用 alert
+function showErr(title,msg,retry){
+  document.body.classList.remove('home');
+  try{sessionStorage.removeItem('dw_active');}catch(e){}
+  $('#main').innerHTML=`<div class="zero">
+    <div class="zt">⚠️ ${title}</div>
+    <div class="zs">${String(msg).replace(/</g,'&lt;')}<br>豆包偶尔拦截抓取（反爬），重试一两次通常就能成功。</div>
+    ${retry?`<button class="ok" onclick="forceFresh=true;doParse()">↻ 重试解析</button>`:''}
+  </div>`;
 }
 
 // 后台补图片文件大小（不阻塞出图）
@@ -274,31 +381,35 @@ function render(){
       var badge=`${it.width||'?'}×${it.height||'?'}`;
       var meta=[it.time||'',(it.format||'jpg').toUpperCase(),fmtSize(it.size)].filter(Boolean).join(' · ');
     }else{
-      media=`<video controls preload="none" playsinline poster="/proxy?u=${encodeURIComponent(it.poster||'')}" data-vi="${i}" src=""></video><span class="zoom" onclick="showLb(${i})" title="放大浏览（可切换上一个/下一个）">⤢ 放大</span>`;
+      // 角标和放大按钮不放视频图层上：iOS 原生视频会盖住 HTML 元素（显示不全/被遮）
+      media=`<video controls preload="none" playsinline poster="/proxy?u=${encodeURIComponent(it.poster||'')}" data-vi="${i}" src=""></video>`;
       const dur=it.duration?(it.duration<60?it.duration.toFixed(0)+'s':(it.duration/60).toFixed(1)+'min'):'';
       var badge=`▶${dur?' '+dur:''} ${it.width||'?'}×${it.height||'?'}`;
       var meta=[it.time||'',fmtCodec(it.codec)||'',fmtSize(it.size)||''].filter(Boolean).join(' · ')||'解析中…';
     }
     const convBtn=(!isIOS&&it.kind==='video'&&it.codec&&!/264/.test(it.codec))?`<button class="warn" onclick="convItem(${i},this)">转码后下载</button>`:'';
-    return `<div class="card"><div class="media">${media}<span class="badge" id="badge_${tab[0]}${i}">${badge}</span></div>
+    const vinfo=it.kind==='video'?`<div class="vinfo"><span>${badge}</span><span class="zoomlink" onclick="showLb(${i})" title="放大浏览（可切换上一个/下一个）">⤢ 放大</span></div>`:'';
+    const badgeSpan=it.kind==='image'?`<span class="badge" id="badge_${tab[0]}${i}">${badge}</span>`:'';
+    return `<div class="card"><div class="media">${media}${badgeSpan}</div>${vinfo}
       <div class="meta" id="meta_${tab[0]}${i}">${meta}</div>
       <div class="btns"><button onclick="dlItem('${tab[0]}${i}')">⬇ 下载</button>${convBtn}</div></div>`;
   }).join('');
+  const full=tab==='image'?(DATA.images||[]).length:(DATA.videos||[]).length;
+  const emptyHint=list.length?'':(full?'<div class="pkempty">时间筛选把 '+full+' 个内容全部筛掉了，<span class="pklink" onclick="setFilter(0)">点此查看全部</span></div>':'解析结果为空');
   $('#main').innerHTML=`
     <div class="fbar">
-      <div class="fleft">时间筛选：<span class="chip ${timeFilter===0?'on':''}" onclick="setFilter(0)">全部</span></div>
-      <div class="fright">
-        <span class="chip ${timeFilter===30?'on':''}" onclick="setFilter(30)">30min</span>
-        <span class="chip ${timeFilter===60?'on':''}" onclick="setFilter(60)">1h</span>
-        <span class="chip ${timeFilter===360?'on':''}" onclick="setFilter(360)">6h</span>
-        <span class="chip ${timeFilter===720?'on':''}" onclick="setFilter(720)">12h</span>
-        <select id="fsel" class="${[1440,2880,4320].includes(timeFilter)?'on':''}" onchange="setFilter(+this.value||0)">
-          <option value="0" ${![1440,2880,4320].includes(timeFilter)?'selected':''}>更多</option>
-          <option value="1440" ${timeFilter===1440?'selected':''}>24h</option>
-          <option value="2880" ${timeFilter===2880?'selected':''}>48h</option>
-          <option value="4320" ${timeFilter===4320?'selected':''}>72h</option>
-        </select>
-      </div>
+      <span class="flabel">时间筛选</span>
+      <span class="chip ${timeFilter===0?'on':''}" onclick="setFilter(0)">全部</span>
+      <span class="chip ${timeFilter===30?'on':''}" onclick="setFilter(30)">0.5h</span>
+      <span class="chip ${timeFilter===60?'on':''}" onclick="setFilter(60)">1h</span>
+      <span class="chip ${timeFilter===360?'on':''}" onclick="setFilter(360)">6h</span>
+      <span class="chip ${timeFilter===720?'on':''}" onclick="setFilter(720)">12h</span>
+      <select id="fsel" class="${[1440,2880,4320].includes(timeFilter)?'on':''}" onchange="setFilter(+this.value||0)">
+        <option value="0" ${![1440,2880,4320].includes(timeFilter)?'selected':''}>更多</option>
+        <option value="1440" ${timeFilter===1440?'selected':''}>24h</option>
+        <option value="2880" ${timeFilter===2880?'selected':''}>48h</option>
+        <option value="4320" ${timeFilter===4320?'selected':''}>72h</option>
+      </select>
     </div>
     <div class="tabs">
       <div class="tab ${tab==='image'?'on':''}" onclick="setTab('image')">图片 ${tab==='image'?list.length:(DATA.images||[]).length}</div>
@@ -306,14 +417,14 @@ function render(){
     </div>
     <div class="toolbar">
       <div class="hint">${DATA.share_name||''}</div>
-      <button class="ok" id="btnAll" onclick="downloadAll(this)">一键下载${tab==='image'?'图片':'视频'}（${list.length}）</button>
+      <button class="ok" id="btnAll" onclick="openPicker()">批量下载${tab==='image'?'图片':'视频'}（${list.length}）</button>
     </div>
-    <div class="${list.length?'grid':'empty'}">${cards}</div>`;
+    <div class="${list.length?'grid':'empty'}">${list.length?cards:emptyHint}</div>`;
   if(tab==='video')resolveVideos();
 }
 function setTab(t){tab=t;render();try{localStorage.setItem('dw_tab',t);}catch(e){}}
 // ×清空输入框（手动粘贴用） / 粘贴：优先直接读剪贴板；被环境拦截时弹粘贴框兜底
-function clearUrl(){$('#url').value='';document.body.classList.add('home');$('#main').innerHTML='';DATA=null;$('#url').focus();}
+function clearUrl(){$('#url').value='';document.body.classList.add('home');$('#main').innerHTML='';DATA=null;timeFilter=0;try{sessionStorage.removeItem('dw_active');localStorage.removeItem('dw_lastUrl');localStorage.setItem('dw_filter','0');}catch(e){}$('#url').focus();}
 async function pasteUrl(){
   try{
     if(!navigator.clipboard||!navigator.clipboard.readText)throw new Error('unsupported');
@@ -354,16 +465,31 @@ async function dlItem(idx){
       u='/proxy?u='+encodeURIComponent(it.url);
       name='img_'+fnum(num)+'_'+fstamp(it)+'.'+(it.format==='png'?'png':'jpg');
     }else{
-      const vs=await videoVariants(k);
-      const best=vs[0]; // 最高清
-      u='/proxy?u='+encodeURIComponent(best.url);
-      name='video_'+fnum(num)+'_'+fstamp(it)+'_'+best.h+'p.mp4';
+      const s=await pickVideoSrc(it); // H.264 直下 / 服务端转标准 mp4
+      u=s.u;name=s.name;
     }
     if(isIOS){shareSave(u,name).catch(()=>window.open(u,'_blank'));return;}
-    dl(u,name);
+    dlBlob(await getBlobCached(u),name); // blob 下载（预取缓存秒触发；直链在其内核会被当导航打开）
   }catch(e){alert('下载失败：'+e);}
 }
-function dl(u,name){fetch(u).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove();});}
+// 真·浏览器下载通道：隐藏 iframe 加载附件直链（服务端 Content-Disposition: attachment）。
+// 不用 a.click()：夸克/QQ 等内核会把程序化直链当页面导航"打开链接"而不是下载；
+// iframe 方式页面永不导航，附件头触发下载管理器接管（显示进度/可保存）
+function dl(u,name){
+  const f=document.createElement('iframe');
+  f.style.display='none';
+  f.src=u+(u.includes('?')?'&':'?')+'dl='+encodeURIComponent(name);
+  document.body.appendChild(f);
+  setTimeout(()=>{try{f.remove();}catch(e){}},120000); // 下载触发后延迟清理
+}
+// 用已就绪的 blob 触发浏览器下载（不二次拉流，秒触发）；objectURL 延迟释放防大文件中断
+function dlBlob(b,name){
+  const a=document.createElement('a');
+  const url=URL.createObjectURL(b);
+  a.href=url;a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(e){}},60000);
+}
 // iOS：拉取文件后调起系统分享面板，用户点「存储图像/存储视频」直接进相册（免长按）
 async function shareSave(u,name){
   const r=await fetch(u);const b=await r.blob();
@@ -403,6 +529,37 @@ function updateVideoMeta(i){
 }
 async function resolveVideos(){const l=curList();for(let i=0;i<l.length;i++){try{await videoVariants(i);}catch(e){const m=$('#meta_v'+i);if(m)m.textContent='解析失败';}}}
 
+// 视频下载源：优先 H.264 变体（正常 mp4 封装）；没有 H.264 时走服务端 ffmpeg 规整/转码，
+// 避免 bytevc1/H.265 裸流（vdat）直接落盘导致手机无法播放
+async function pickVideoSrc(it){
+  const vs=await videoVariants(curList().indexOf(it));
+  const h264=vs.find(x=>/264/.test(x.codec||''));
+  const best=h264||vs[0];
+  const num=it._fi+1;
+  if(h264){
+    return {u:'/proxy?u='+encodeURIComponent(best.url),name:'video_'+fnum(num)+'_'+fstamp(it)+'_'+best.h+'p.mp4'};
+  }
+  return {u:'/api/convert?u='+encodeURIComponent(best.url)+'&codec='+encodeURIComponent(best.codec||''),name:'video_'+fnum(num)+'_'+fstamp(it)+'_h264.mp4'};
+}
+// blob 缓存：打开选择页即后台预取，点「批量分享」时文件秒备好——
+// iOS 的 navigator.share 必须在用户手势有效期内调用，取文件太久手势过期会被拒（NotAllowedError）
+const blobCache=new Map();
+function getBlobCached(u){
+  if(!blobCache.has(u))blobCache.set(u,fetchBlob(u).catch(e=>{blobCache.delete(u);throw e;}));
+  return blobCache.get(u);
+}
+function prefetchPicker(){
+  // 并行预取（浏览器自身限并发，无需手动限流），打开选择页即开始
+  for(const it of curList()){
+    (async()=>{
+      try{
+        const s=it.kind==='image'?{u:'/proxy?u='+encodeURIComponent(it.url)}:await pickVideoSrc(it);
+        getBlobCached(s.u);
+      }catch(e){}
+    })();
+  }
+}
+
 // 无损/快速转 H.264：容器不标准优先 -c copy 重封装，编码不兼容才快速转码
 async function convItem(i,btn){
   const it=DATA.videos[i];
@@ -421,29 +578,171 @@ async function convItem(i,btn){
   btn.disabled=false;btn.textContent=old;
 }
 
-async function downloadAll(btn){
+async function fetchBlob(u){const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);return await r.blob();}
+
+/* ===== 多选下载选择页：缩略图网格 + 勾选 + 全选 + 底部"保存到相册" ===== */
+let pickSel=new Set();
+function openPicker(){
   const list=curList();
   if(!list.length)return;
-  btn.disabled=true;const old=btn.textContent;btn.textContent='下载中…';
-  for(let i=0;i<list.length;i++){
-    try{
-      if(tab==='image'){
-        const u='/proxy?u='+encodeURIComponent(list[i].url);
-        const nm='img_'+fnum(i+1)+'_'+fstamp(list[i])+'.'+(list[i].format==='png'?'png':'jpg');
-        if(isIOS)await shareSave(u,nm);
-        else dl(u,nm);
-      }else{
-        const vs=await videoVariants(i);
-        const best=vs[0];
-        const u='/proxy?u='+encodeURIComponent(best.url);
-        const nm='video_'+fnum(i+1)+'_'+fstamp(list[i])+'_'+best.h+'p.mp4';
-        if(isIOS)await shareSave(u,nm);
-        else dl(u,nm);
-      }
-      if(!isIOS)await new Promise(r=>setTimeout(r,700));
-    }catch(e){console.warn(e);}
+  pickSel=new Set(list.map((_,i)=>i)); // 默认全选
+  document.body.classList.add('hidevid'); // 遮住背景视频（原生图层穿透遮罩）
+  document.querySelectorAll('.media video').forEach(v=>{try{v.pause();}catch(e){}});
+  $('#pkTip').style.display='none'; // 重置上次的下载提示
+  $('#picker').style.display='flex';
+  pkRender();
+  prefetchPicker(); // 后台预取 blob：iOS 分享必须在手势窗口内弹出面板
+}
+function hidePicker(){$('#picker').style.display='none';document.body.classList.remove('hidevid');}
+function togglePick(i){pickSel.has(i)?pickSel.delete(i):pickSel.add(i);pkRender();}
+function toggleAll(){
+  const list=curList();
+  if(list.length&&pickSel.size===list.length)pickSel.clear();
+  else pickSel=new Set(list.map((_,i)=>i));
+  pkRender();
+}
+function pkRender(){
+  const list=curList();
+  $('#pkTitle').textContent=tab==='image'?'保存图片':'保存视频';
+  const all=pickSel.size===list.length&&list.length>0;
+  $('#pkAll').textContent=all?'取消全选':'全选';
+  $('#pkGrid').innerHTML=list.map((it,i)=>{
+    let media,dim=`${it.width||'?'}×${it.height||'?'}`;
+    if(it.kind==='image'){
+      media=`<img loading="lazy" src="/proxy?u=${encodeURIComponent(it.thumb||it.url)}">`;
+    }else{
+      media=it.poster?`<img loading="lazy" src="/proxy?u=${encodeURIComponent(it.poster)}">`:'<div class="pkvph">▶</div>';
+      if(it.duration)dim+='·'+(it.duration<60?it.duration.toFixed(0)+'s':(it.duration/60).toFixed(1)+'min');
+    }
+    return `<div class="pktile ${pickSel.has(i)?'sel':''}" onclick="togglePick(${i})">${media}<span class="pkdim">${dim}</span><span class="pkck">${pickSel.has(i)?'✓':''}</span></div>`;
+  }).join('');
+  const shareBtn=$('#pkShare'),dlBtn=$('#pkDl');
+  const n=pickSel.size,has=n>0;
+  shareBtn.disabled=!has;dlBtn.disabled=!has;
+  shareBtn.textContent=has?`📤 批量分享（${n}）`:'📤 批量分享';
+  dlBtn.textContent=has?`⬇ 批量下载（${n}）`:'⬇ 批量下载';
+}
+// 取勾选项的文件 blob 列表（分享用）：并行下载，进度实时更新；图片用原图，视频统一 H.264/标准 mp4
+async function buildFiles(list,btn){
+  let done=0;const total=list.length;
+  const tasks=list.map(async it=>{
+    let b,nm,ty;
+    if(it.kind==='image'){
+      b=await getBlobCached('/proxy?u='+encodeURIComponent(it.url));
+      nm='img_'+fnum(it._fi+1)+'_'+fstamp(it)+'.'+(it.format==='png'?'png':'jpg');
+      ty=b.type||'image/jpeg';
+    }else{
+      const s=await pickVideoSrc(it);
+      b=await getBlobCached(s.u);
+      nm=s.name;ty='video/mp4';
+    }
+    done++;btn.textContent=`取文件中 ${done}/${total}…`;
+    return new File([b],nm,{type:ty});
+  });
+  return await Promise.all(tasks); // 顺序与勾选顺序一致
+}
+async function doPickShare(){
+  const btn=$('#pkShare');
+  const list=curList().filter((_,i)=>pickSel.has(i));
+  if(!list.length)return;
+  btn.disabled=true;btn.classList.add('busy');const old=btn.textContent;
+  try{
+    // 合并成一次 share 调用：iOS 分享面板点「存储图像 / 存储视频」勾选的全部直接进相册
+    const files=await buildFiles(list,btn);
+    if(navigator.canShare&&navigator.canShare({files})){
+      await navigator.share({files});
+      hidePicker();
+    }else{
+      alert('当前浏览器不支持多文件分享，请改用「批量下载」或减少勾选数量');
+    }
+  }catch(e){
+    if(e&&e.name==='NotAllowedError'){
+      // 手势过期导致分享面板没弹出；此时文件已全部就绪，重试一次必然秒弹
+      alert('分享面板没有弹出（系统响应超时）。文件已准备好，请再点一次「批量分享」，弹出面板后立即点「存储图像 / 存储视频」。');
+    }else if(!(e&&e.name==='AbortError')){
+      alert('分享失败：'+(e&&e.message||e));
+    }
   }
-  btn.disabled=false;btn.textContent=old;
+  btn.disabled=false;btn.classList.remove('busy');btn.textContent=old;
+}
+// iOS 手动「⬇ 保存」：单文件弹系统分享面板（存储图像/存储视频 → 直接进相册）。
+// iOS 所有浏览器内核（WKWebView）没有真正的网页下载通道，attachment 直链只会打开预览页；
+// 分享面板是最可靠入口，blob 已在打开选择页时预取，点击秒弹
+let pkRows=[];
+async function shareOne(it){
+  try{
+    let u,name;
+    if(it.kind==='image'){u='/proxy?u='+encodeURIComponent(it.url);name='img_'+fnum(it._fi+1)+'_'+fstamp(it)+'.'+(it.format==='png'?'png':'jpg');}
+    else{const s=await pickVideoSrc(it);u=s.u;name=s.name;}
+    const b=await getBlobCached(u);
+    const f=new File([b],name,{type:it.kind==='image'?(b.type||'image/jpeg'):'video/mp4'});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return;}
+    window.location.href=u+(u.includes('?')?'&':'?')+'dl='+encodeURIComponent(name); // 分享不可用才走直链
+  }catch(e){if(!(e&&e.name==='AbortError'))alert('保存失败：'+(e&&e.message||e));}
+}
+function pkRowTap(i){
+  const r=pkRows[i];if(!r)return true;
+  if(isIOS&&navigator.canShare){shareOne(r.it);return false;} // iOS：分享面板存相册，不导航
+  return true; // 电脑/安卓：直链导航，交给浏览器下载管理器
+}
+async function doPickDownload(){
+  const btn=$('#pkDl');
+  const list=curList().filter((_,i)=>pickSel.has(i));
+  if(!list.length)return;
+  btn.disabled=true;btn.classList.add('busy');const old=btn.textContent;
+  const rows=[];let auto=0;
+  try{
+    if(isIOS){
+      // iOS：没有网页下载通道，逐文件「⬇ 保存」弹分享面板进相册（文件已预取秒弹）
+      for(let i=0;i<list.length;i++){
+        const it=list[i];
+        btn.textContent=`探测资源 ${i+1}/${list.length}…`;
+        let u,name,bytes=null;
+        if(it.kind==='image'){
+          u='/proxy?u='+encodeURIComponent(it.url);
+          name='img_'+fnum(it._fi+1)+'_'+fstamp(it)+'.'+(it.format==='png'?'png':'jpg');
+        }else{
+          const s=await pickVideoSrc(it); // 视频统一 H.264/标准 mp4（需转码时等服务端 ffmpeg）
+          u=s.u;name=s.name;
+          if(it._vs){const h=it._vs.find(x=>/264/.test(x.codec||''))||it._vs[0];bytes=h.size||null;}
+        }
+        let ok=true;
+        try{
+          const ctl=new AbortController(); // 探针：读到响应头就断开，不拉完整文件
+          const r=await fetch(u,{headers:{Range:'bytes=0-1'},signal:ctl.signal});
+          ok=r.ok||r.status===206;
+          const cr=r.headers.get('Content-Range');
+          if(cr){const m=cr.match(/\\/(\\d+)/);if(m)bytes=+m[1];}
+          else{const cl=r.headers.get('Content-Length');if(cl&&!bytes)bytes=+cl;}
+          ctl.abort();
+        }catch(e){if(e&&e.name!=='AbortError')ok=false;}
+        rows.push({ok,name,bytes,u,it});
+      }
+    }else{
+      // 安卓/桌面：一次自动批量下载全部（时间戳命名；视频已统一转 H.264 mp4 再下载）
+      for(let i=0;i<list.length;i++){
+        const it=list[i];btn.textContent=`下载中 ${i+1}/${list.length}…`;
+        let u,name;
+        if(it.kind==='image'){u='/proxy?u='+encodeURIComponent(it.url);name='img_'+fnum(it._fi+1)+'_'+fstamp(it)+'.'+(it.format==='png'?'png':'jpg');}
+        else{const s=await pickVideoSrc(it);u=s.u;name=s.name;}
+        try{dlBlob(await getBlobCached(u),name);auto++;}catch(e){}
+        await new Promise(r=>setTimeout(r,400)); // 间隔防浏览器拦多文件
+      }
+    }
+    pkRows=rows;
+    const tip=$('#pkTip');
+    tip.style.display='block';
+    tip.innerHTML=isIOS
+      ?('📱 iPhone：逐个点「⬇ 保存」→ 弹出分享面板 → 点「存储图像 / 存储视频」直接进相册：<br>'
+        +rows.map((r,i)=>'<div class="pkrow"><span class="pkname">'+(r.ok?'✅':'⚠️')+' 📎 '+r.name+(r.bytes?' ('+fmtSize(r.bytes)+')':'')+'</span><a class="pkdlbtn" href="'+r.u+(r.u.includes('?')?'&':'?')+'dl='+encodeURIComponent(r.name)+'" onclick="return pkRowTap('+i+')">⬇ 保存</a></div>').join('')
+        +'<button class="pkfb" onclick="doPickShare()">📥 批量分享，一次存全部到相册</button>')
+      :('✅ 已批量提交 '+auto+' 个下载任务，文件在浏览器的下载文件夹（相册/文件管理里能找到）'
+        +(auto<list.length?'<br>⚠️ 有 '+(list.length-auto)+' 个文件没取到，请重试或用「批量分享」':'')
+        +'<button class="pkfb" onclick="doPickShare()">📥 想直接进相册？用「批量分享」</button>');
+  }catch(e){
+    if(!(e&&e.name==='AbortError'))alert('下载失败：'+(e&&e.message||e));
+  }
+  finally{btn.disabled=false;btn.classList.remove('busy');btn.textContent=old;}
 }
 
 /* 大图灯箱：图片/视频统一浏览（预取邻图 + 加载动画） */
@@ -553,6 +852,86 @@ def _remote_size(u):
 
 _VV_CACHE = {}   # fallback_api -> variants（进程内缓存，避免重复解密请求）
 _SCAN_CACHE = {} # 分享链接 -> 解析结果（scan 秒回；sizes 异步补大小）
+_SCAN_DISK = os.path.join(tempfile.gettempdir(), "dw_scan_cache.json")  # 落盘：进程重启/豆包风控期间仍能给出上次结果
+_URL_LOCKS = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _url_lock(u):
+    """同一链接的并发解析互斥：只放一个请求去抓豆包，避免重复抓取触发风控。"""
+    with _LOCKS_GUARD:
+        return _URL_LOCKS.setdefault(u, threading.Lock())
+
+
+def _disk_load():
+    try:
+        with open(_SCAN_DISK, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _disk_save(url, r):
+    try:
+        with _LOCKS_GUARD:
+            d = _disk_load()
+            d[url] = r
+            for k in list(d)[:-50]:  # 只留最近 50 条，防无限膨胀
+                d.pop(k, None)
+            with open(_SCAN_DISK, "w", encoding="utf-8") as f:
+                json.dump(d, f, ensure_ascii=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _parse_cached(u, fresh=False):
+    """带互斥/重试/落盘兜底的解析。
+    关键规则：空结果（豆包间歇性反爬返回的空壳页，有框架无内容）绝不缓存——
+    缓存了空结果会导致之后每次解析都秒回 0/0（此前「多点几次才正常」的根因之一）。
+    - 已缓存且非空：直接秒回
+    - 未缓存：同一链接并发只放一个去抓；单次请求内最多重试 4 次（异常和空结果都算失败）
+    - 重试全空/失败：回退最近一次落盘的好结果；连历史都没有时，返回空结果附诊断（不写缓存）
+    """
+    lk = _url_lock(u)
+    with lk:
+        if not fresh and u in _SCAN_CACHE:
+            r = _SCAN_CACHE[u]
+            if r.get("image_count") or r.get("video_count"):  # 空结果不算有效缓存
+                return r, False
+        last_err, last_empty = None, None
+        for attempt in range(4):
+            try:
+                r = E.parse_share(u)
+                if r["image_count"] or r["video_count"]:
+                    _SCAN_CACHE[u] = r
+                    _disk_save(u, r)
+                    return r, False
+                last_empty = r  # 空壳页：有框架无内容，重试
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+            time.sleep(1.2 * (attempt + 1))
+        stale = _disk_load().get(u)
+        if stale and (stale.get("image_count") or stale.get("video_count")):
+            _SCAN_CACHE[u] = stale
+            return stale, True  # 豆包侧暂时取不到，先用历史成功结果
+        if last_empty is not None:
+            return last_empty, False  # 真空分享或持续空壳：给前端诊断页，但不缓存
+        raise last_err
+
+
+def _scan_debug(u):
+    """空结果时抓一次页面做诊断：区分"内容过期/为空"与"风控半页/结构变化"。"""
+    try:
+        html_text = E.http_get(u, timeout=40)
+    except Exception as e:  # noqa: BLE001
+        return {"page": f"fetch-failed: {e}"}
+    m = re.search(r"<title>([^<]{0,80})", html_text)
+    try:
+        blocks = E._extract_blocks(html_text)
+    except Exception:  # noqa: BLE001
+        blocks = []
+    return {"page_len": len(html_text), "title": (m.group(1).strip() if m else ""),
+            "has_snapshot": "message_snapshot" in html_text, "blocks": len(blocks)}
 
 
 def _fetch_all(src, tries=3):
@@ -577,7 +956,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        for k, v in (extra or {}).items():
+        # no-store：防手机浏览器把 API 响应（尤其失败响应）缓存住，导致同一链接重复解析"一直失败"
+        hdrs = {"Cache-Control": "no-store"}
+        hdrs.update(extra or {})
+        for k, v in hdrs.items():
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
@@ -616,17 +998,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_scan(self):
         u = self._q("url").strip()
+        fresh = self._q("fresh") == "1"
         if "/thread/" not in u:
             self._send(400, json.dumps({"error": "链接需包含 /thread/"}).encode("utf-8"))
             return
-        if u not in _SCAN_CACHE:
-            _SCAN_CACHE[u] = E.parse_share(u)
-        r = _SCAN_CACHE[u]
+        try:
+            # 走 _parse_cached：重试 4 次 + 空结果不缓存 + 落盘兜底（此前空结果直接写缓存，
+            # 导致首次撞上豆包空壳页后每次都秒回 0/0——「新链接也解析失败」的根因）
+            r, stale = _parse_cached(u, fresh)
+        except Exception as e:  # noqa: BLE001 —— 重试全败：返回明确错误而不是 500
+            self._send(200, json.dumps({"error": f"解析失败：{e}", "retry_hint": True},
+                                       ensure_ascii=False).encode("utf-8"))
+            return
         images = [{k: it.get(k) for k in ("id", "time", "epoch", "width", "height", "format", "url", "thumb")} | {"kind": "image"} for it in r["images"]]
         videos = [{k: it.get(k) for k in ("id", "time", "epoch", "width", "height", "duration", "poster", "fallback_api")} | {"kind": "video"} for it in r["videos"]]
         slim = {"share_name": r["share_name"], "share_url": r["share_url"],
                 "image_count": r["image_count"], "video_count": r["video_count"],
                 "images": images, "videos": videos}
+        if stale:
+            slim["stale"] = True  # 豆包侧暂时取不到，返回的是历史成功结果
+        # 空结果附带页面诊断，便于区分"内容过期"与"页面结构变化/风控半页"
+        if not images and not videos:
+            slim["debug"] = _scan_debug(u)
         self._send(200, json.dumps(slim, ensure_ascii=False).encode("utf-8"))
 
     def _api_sizes(self):
@@ -707,7 +1100,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
             with open(dst, "rb") as f:
                 data = f.read()
-            fname = urllib.parse.quote("convert_h264.mp4")
+            fname = urllib.parse.quote(self._q("dl").strip() or "convert_h264.mp4")
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Content-Length", str(len(data)))
@@ -722,6 +1115,8 @@ class Handler(BaseHTTPRequestHandler):
         if not u.startswith(("http://", "https://")):
             self._send(400, b'{"error":"bad url"}')
             return
+        # dl 参数：以附件方式下发（真正走浏览器下载通道），浏览器下载管理器可见、可选保存位置
+        dl_name = self._q("dl").strip()
         req = urllib.request.Request(u, headers=dict(E.HEADERS))
         rng = self.headers.get("Range")
         if rng:
@@ -731,6 +1126,9 @@ class Handler(BaseHTTPRequestHandler):
             headers = {"Content-Type": resp.headers.get("Content-Type") or _guess_type(u),
                        "Accept-Ranges": "bytes",
                        "Cache-Control": "public, max-age=86400"}
+            if dl_name:
+                qn = urllib.parse.quote(dl_name)
+                headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{qn}"
             if resp.headers.get("Content-Length"):
                 headers["Content-Length"] = resp.headers["Content-Length"]
             if resp.headers.get("Content-Range"):
@@ -754,6 +1152,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         r = E.parse_share(share_url)
         items = r["images"] if typ == "image" else r["videos"]
+        # sel=0,2,5：只打包勾选的序号（0-based，对应解析结果全量列表下标）
+        sel = self._q("sel").strip()
+        if sel:
+            idxs = {int(x) for x in sel.split(",") if x.strip().isdigit()}
+            items = [it for i, it in enumerate(items) if i in idxs]
         if typ == "video":
             items = [dict(it, _u=(E.resolve_video_variants(it["fallback_api"]) or [{}])[0].get("url")) for it in items]
         buf = io.BytesIO()

@@ -60,18 +60,33 @@ def download_file(url, path, timeout=300):
 
 # ------------------------------------------------------- 页面数据提取
 
-FN_ARGS_RE = re.compile(r'data-fn-args="(.*?)"', re.DOTALL)
+# 兼容单/双引号属性（豆包 2026-09 起把大数据块改用单引号包裹：data-fn-args='[&quot;...&quot;]'）
+FN_ARGS_RE = re.compile(r'data-fn-args=(["\'])(.*?)\1', re.DOTALL)
 
 
 def _extract_blocks(html):
-    """从页面 HTML 中解析出所有内嵌 fn-args JSON（list 形式）。"""
+    """从页面 HTML 中解析出所有内嵌 fn-args JSON（list 形式），兼容单/双引号属性。"""
     blocks = []
     for m in FN_ARGS_RE.finditer(html):
         try:
-            data = json.loads(htmllib_unescape(m.group(1)))
+            data = json.loads(htmllib_unescape(m.group(2)))
         except Exception:
             continue
         blocks.append(data)
+    return blocks
+
+
+def _extract_blocks_multi(html):
+    """多策略提取：豆包会变换 JSON 嵌入方式（双引号/单引号属性、一层或多层 HTML 实体转义）。
+    原文提取 + 逐层反转义后再提取，全部合并（后续 _dedupe 会去重，多余块无害）。"""
+    blocks = _extract_blocks(html)
+    cur = html
+    for _ in range(3):  # 最多剥 3 层实体转义
+        nxt = htmllib_unescape(cur)
+        if nxt == cur:
+            break
+        cur = nxt
+        blocks += _extract_blocks(cur)
     return blocks
 
 
@@ -394,8 +409,9 @@ def parse_share(share_url):
     """主入口：本地解析分享链接。返回 dict(share_name, images, videos)。
     三级策略：结构化提取 -> 泛走查提取 -> 正则碎片兜底，页面结构变化时尽量不断链。"""
     html_text = http_get(share_url)
-    blocks = _extract_blocks(html_text)
-    if not blocks or "message_snapshot" not in html_text:
+    # 兼容新旧页面结构：原文 + 逐层反转义多轮提取（豆包 2026-09 起部分分享改用单引号属性+实体转义）
+    blocks = _extract_blocks_multi(html_text)
+    if not blocks or "message_snapshot" not in htmllib_unescape(html_text):
         # 页面被风控/网络抖动/结构变更时明确报错，而不是静默返回 0
         raise ValueError("页面未返回可解析数据（可能被风控拦截或网络抖动），请稍后重试")
     mlists = find_message_lists(blocks)
