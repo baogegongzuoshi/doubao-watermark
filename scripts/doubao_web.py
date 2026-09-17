@@ -87,9 +87,29 @@ button:disabled{opacity:.5;cursor:wait}
 #lb .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);font-size:22px;width:46px;height:46px;padding:0;border-radius:50%}
 #lb .prev{left:10px}#lb .next{right:10px}
 #lb .cnt{color:#fff;font-size:12px;margin-top:8px}
+/* ===== 主页（home 模式：logo + 居中大搜索框） ===== */
+#logo{display:none;text-align:center;margin:9vh 16px 26px}
+body.home #logo{display:block}
+#logo .appname{font-size:24px;font-weight:700;margin-top:14px;letter-spacing:1px}
+#logo .appsub{font-size:13px;color:var(--sub);margin-top:6px}
+body.home .wrap{padding-top:0}
+body.home .bar{max-width:620px;margin:0 auto 14px;flex-wrap:nowrap}
+body.home .bar input{border:2px solid var(--acc);font-size:15px;padding:13px 16px;box-shadow:0 4px 18px rgba(47,107,255,.18)}
+body.home .bar input:focus{box-shadow:0 4px 22px rgba(47,107,255,.32)}
+body.home #btnClear,body.home #btnPaste{padding:12px 16px}
+body.home #btnParse{background:linear-gradient(135deg,#2f6bff,#7a3cff);padding:12px 24px;font-size:15px;font-weight:600;box-shadow:0 4px 16px rgba(47,107,255,.35)}
+body.home #mTip{max-width:620px;margin:0 auto 12px}
+body.home #logo{animation:pop .45s ease}
+@keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
 /* ===== 移动端适配 ===== */
 @media(max-width:600px){
   body{padding:10px 8px calc(10px + env(safe-area-inset-bottom))}
+  /* 主页：logo 上移、搜索框独占一行 */
+  #logo{margin:6vh 8px 20px}
+  #logo .appname{font-size:21px}
+  body.home .bar{flex-wrap:wrap}
+  body.home .bar input{flex:1 1 100%}
   /* 输入区：链接独占一行，按钮第二行 */
   .bar{gap:6px}
   .bar input{flex:1 1 100%;font-size:16px;padding:10px 12px} /* 16px 防 iOS 聚焦自动放大 */
@@ -129,8 +149,20 @@ button:disabled{opacity:.5;cursor:wait}
 }
 </style>
 </head>
-<body>
+<body class="home">
 <div class="wrap">
+  <div id="logo">
+    <svg width="92" height="92" viewBox="0 0 64 64" aria-label="logo">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#2f6bff"/><stop offset="1" stop-color="#7a3cff"/>
+      </linearGradient></defs>
+      <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#lg)"/>
+      <path d="M32 15c7.5 8.5 11.5 13.2 11.5 18.8a11.5 11.5 0 1 1-23 0C20.5 28.2 24.5 23.5 32 15z" fill="#fff"/>
+      <line x1="15" y1="51" x2="49" y2="13" stroke="#ff5a5a" stroke-width="5" stroke-linecap="round" opacity=".92"/>
+    </svg>
+    <div class="appname">豆包无水印解析</div>
+    <div class="appsub">粘贴豆包分享链接 · 一键提取图片和视频 · 原画质无水印</div>
+  </div>
   <div class="bar">
     <input id="url" placeholder="https://www.doubao.com/thread/...">
     <button class="gray" id="btnClear" onclick="clearUrl()" title="清空输入框，自己手动粘贴">×</button>
@@ -207,6 +239,7 @@ async function doParse(){
     render();
     prefetchImgs();
     loadSizes();
+    document.body.classList.remove('home'); // 进入结果页
   }catch(e){alert('解析失败：'+e);}
   btn.disabled=false;btn.textContent=oldTxt;
 }
@@ -279,7 +312,7 @@ function render(){
 }
 function setTab(t){tab=t;render();try{localStorage.setItem('dw_tab',t);}catch(e){}}
 // ×清空输入框（手动粘贴用） / 粘贴：优先直接读剪贴板；被环境拦截时弹粘贴框兜底
-function clearUrl(){$('#url').value='';$('#url').focus();}
+function clearUrl(){$('#url').value='';document.body.classList.add('home');$('#main').innerHTML='';DATA=null;$('#url').focus();}
 async function pasteUrl(){
   try{
     if(!navigator.clipboard||!navigator.clipboard.readText)throw new Error('unsupported');
