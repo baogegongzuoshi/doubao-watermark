@@ -227,6 +227,7 @@ function fmtCodec(c){c=(c||'').toLowerCase();return c.includes('265')||c.include
 
 async function doParse(){
   const u=$('#url').value.trim();
+  if(!u){clearUrl();return;} // 空链接：静默回到主页，不弹提醒
   if(!u.includes('/thread/')){alert('链接需包含 /thread/');return;}
   try{localStorage.setItem('dw_lastUrl',u);}catch(e){}
   const btn=$('#btnParse');
@@ -510,6 +511,7 @@ async function lbDl(){
   }
 }
 document.addEventListener('keydown',e=>{if($('#lb').style.display==='flex'){if(e.key==='Escape')hideLb();if(e.key==='ArrowLeft')lbNav(-1);if(e.key==='ArrowRight')lbNav(1);}});
+$('#url').addEventListener('keydown',e=>{if(e.key==='Enter')doParse();});
 </script>
 </body>
 </html>"""
