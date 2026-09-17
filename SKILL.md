@@ -40,6 +40,9 @@ Python 路径：`C:/Users/Admin/.workbuddy/binaries/python/versions/3.13.12/pyth
 
 # 3. 视频无损规整 mp4（ffmpeg -c copy）；--transcode 转 H.264（有损，兼容性兜底）
 ... scripts/doubao_engine.py mp4 <文件...> [--transcode]
+
+# 4. 本地网页展示（jiagev 风格）：图片/视频双选项卡 + 单个下载 + 一键批量 ZIP + 手机逐个保存
+... scripts/doubao_web.py [端口]     # 默认 8765，浏览器开 http://127.0.0.1:8765，粘贴 /thread/ 链接点解析
 ```
 
 ## 智能过滤模式命令

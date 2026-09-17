@@ -20,6 +20,9 @@ python scripts/doubao_engine.py scan "<doubao.com/thread/xxx 链接>"
 # 确认后下载
 python scripts/doubao_engine.py download "<链接>" --out ./output --type all
 
+# 本地网页展示：图片/视频双选项卡 + 单图下载 + 一键批量 + 手机逐个保存
+python scripts/doubao_web.py            # 默认 8765，浏览器打开 http://127.0.0.1:8765
+
 # 智能过滤（先取样本审读，再按 verdicts 下载）
 python scripts/doubao_smart.py candidates "<链接>" --review ./review
 python scripts/doubao_smart.py download "<链接>" --out ./output --verdicts ./review/verdicts.json
@@ -34,6 +37,7 @@ doubao-watermark/
 ├── SKILL.md                  # WorkBuddy skill 入口（触发条件 + 模式路由 + 审读规则）
 ├── scripts/
 │   ├── doubao_engine.py      # 解析引擎：scan / download / mp4（无损规整）
+│   ├── doubao_web.py         # 本地网页展示：双选项卡 + 批量下载（零依赖内嵌页面）
 │   └── doubao_smart.py       # 智能过滤：candidates / download（分层 verdicts）
 └── README.md
 ```
