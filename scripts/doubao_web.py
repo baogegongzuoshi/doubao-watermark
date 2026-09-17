@@ -691,9 +691,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"豆包解析本地展示: http://127.0.0.1:{port}  (Ctrl+C 退出)")
+    # 云端部署时平台注入 PORT 并要求监听 0.0.0.0；本地无 PORT 环境变量时保持 127.0.0.1:8765
+    port = int(os.environ.get("PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8765))
+    host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    srv = ThreadingHTTPServer((host, port), Handler)
+    print(f"豆包解析: http://{host}:{port}  (Ctrl+C 退出)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
