@@ -196,7 +196,16 @@ button.blue.busy,button.ok.busy{filter:brightness(1.12);animation:pulse 1s ease 
   #lbImg,#lbVid{height:calc(100vh - 96px)}
   #lb .lbbar button{padding:8px 18px}
 }
+html.restoring body{visibility:hidden} /* 刷新恢复期间整页隐藏，防主页一闪而过 */
 </style>
+<script>
+// 防主页闪烁：首屏绘制前同步判断——若本次会话正在浏览结果页且有数据快照（刷新恢复场景），
+// 先把整页隐藏，等恢复逻辑用快照重绘完再显示；700ms 兜底强制显示，防恢复异常导致白屏
+try{if(sessionStorage.getItem('dw_active')==='1'&&sessionStorage.getItem('dw_data')){
+  document.documentElement.classList.add('restoring');
+  setTimeout(function(){document.documentElement.classList.remove('restoring');},700);
+}}catch(e){}
+</script>
 </head>
 <body class="home">
 <div class="wrap">
@@ -211,10 +220,10 @@ button.blue.busy,button.ok.busy{filter:brightness(1.12);animation:pulse 1s ease 
     </svg>
     <div class="appname">无水印解析</div>
     <div class="appsub">粘贴DB分享链接 · 一键提取图片和视频 · 原画质无水印</div>
-    <div class="ver">v20260918h</div>
+    <div class="ver">v20260918l</div>
   </div>
   <div class="bar">
-    <input id="url" placeholder="https://www.doubao.com/thread/...">
+    <input id="url" placeholder="https://www.doubao.com/thread/..." autocomplete="off" spellcheck="false">
     <button class="gray" id="btnClear" onclick="clearUrl()" title="清空输入框，自己手动粘贴">×</button>
     <button class="gray" id="btnPaste" onclick="pasteUrl()" title="清空旧链接并填入剪贴板内容">粘贴</button>
     <button id="btnParse" onclick="doParse()">解析</button>
@@ -239,7 +248,7 @@ button.blue.busy,button.ok.busy{filter:brightness(1.12);animation:pulse 1s ease 
   </div>
   <div class="pkgrid" id="pkGrid"></div>
   <div class="pktip" id="pkTip" style="display:none"></div>
-  <div class="pkhint">📱 仅苹果手机用「批量分享」进相册 · 💻 win/mac/安卓用「批量下载」<br>苹果：点下载后跳转分享 → 点「保存到视频」→ 相册可找到　|　win/mac/安卓：在浏览器下载/下载文件里找到视频</div>
+  <div class="pkhint">📱 仅苹果手机用「批量分享」进相册 · 💻 win/mac/安卓用「批量下载」<br>苹果：点下载后跳转分享 → 点「保存到视频」→ 相册可找到<br>win/mac/安卓：在浏览器下载/下载文件里找到视频</div>
   <div class="pkfoot"><button class="ok" id="pkShare" onclick="doPickShare()">📤 批量分享</button><button class="blue" id="pkDl" onclick="doPickDownload()">⬇ 批量下载</button></div>
 </div>
 <div id="lb" onclick="if(event.target===this)hideLb()">
@@ -264,28 +273,48 @@ function curList(){
   return l.filter(it=>(it.epoch||0)*1000>=cut);
 }
 function setFilter(m){timeFilter=m;render();try{localStorage.setItem('dw_filter',m);}catch(e){}}
-if(isMobile){const t=$('#mTip');t.style.display='block';t.innerHTML=isIOS?'📱 iOS：进相册推荐用「批量分享」→ 分享面板「存储图像 / 存储视频」；「批量下载」交给当前浏览器（QQ/夸克/Safari 等）自带的下载功能，完成后在选择页会提示各浏览器下载管理的位置。视频自动转标准 mp4。':'🤖 Android：「批量下载」交给当前浏览器（QQ/夸克/Safari 等）自带的下载功能，文件在浏览器的「下载管理」里，QQ/夸克可「保存到相册」；首次会询问"允许下载多个文件"请点允许；「批量分享」调起分享面板；视频自动转标准 mp4。';}
+// 平台下载提示只用主页静态 .dlhint 一处，避免黄色 mTip 重复啰嗦
 window.addEventListener('DOMContentLoaded',()=>{
   const q=new URLSearchParams(location.search);
   const qu=q.get('url');
   const qt=q.get('tab');
   if(qu&&qu.includes('/thread/')){
+    document.documentElement.classList.remove('restoring');
     if(qt==='video')tab='video';
     $('#url').value=qu;doParse();
     return;
   }
-  // 会话内刷新恢复：仅当本次会话正在浏览结果时才自动恢复解析（服务端缓存秒回）
-  // 关掉页面重开、或点过 × 清空后，不再强制回到旧解析，只把上次链接预填在输入框
+  // 仅"本次会话正在浏览结果页"时才恢复；主页绝不缓存链接——
+  // 点过 ×、关掉重开、回退到主页，刷新后都是干净的空输入框（autocomplete=off 防浏览器表单缓存回填）
   try{
     const su=localStorage.getItem('dw_lastUrl');
-    if(su&&su.includes('/thread/')){
-      const active=sessionStorage.getItem('dw_active')==='1';
+    if(su&&su.includes('/thread/')&&sessionStorage.getItem('dw_active')==='1'){
       const st=localStorage.getItem('dw_tab');if(st==='video')tab='video';
       timeFilter=+localStorage.getItem('dw_filter')||0;
-      $('#url').value=su;
-      if(active)doParse(true); // 刷新恢复：保留筛选档位；非会话内只预填链接，停在主页等用户点解析
+      const raw=sessionStorage.getItem('dw_data');
+      if(raw){
+        // 秒恢复：直接用会话快照重绘，不重新请求——无主页闪烁、无"自动点解析"过程
+        DATA=JSON.parse(raw);
+        (DATA.images||[]).forEach((it,i)=>it._fi=i);
+        (DATA.videos||[]).forEach((it,i)=>it._fi=i);
+        $('#url').value=su;
+        render();
+        prefetchImgs();
+        loadSizes();
+        document.body.classList.remove('home');
+        if(sessionStorage.getItem('dw_picker')==='1')openPicker(true); // 刷新前选择页开着 → 原样恢复（含勾选）
+        document.documentElement.classList.remove('restoring'); // 快照重绘完成，立即显示（不等兜底超时）
+      }else{
+        $('#url').value=su;
+        document.documentElement.classList.remove('restoring');
+        doParse(true); // 没有快照（如分享链接直达）才走重新解析
+      }
     }
   }catch(e){}
+});
+// 前进/后退的页面缓存（bfcache）恢复时：若当前不是结果会话，强制回到干净主页
+window.addEventListener('pageshow',e=>{
+  if(e.persisted){try{if(sessionStorage.getItem('dw_active')!=='1')clearUrl();}catch(err){}}
 });
 
 function fmtSize(n){if(!n)return '';const u=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<3){n/=1024;i++;}return n.toFixed(i===0||n>=100?0:1)+u[i];}
@@ -420,11 +449,13 @@ function render(){
       <button class="ok" id="btnAll" onclick="openPicker()">批量下载${tab==='image'?'图片':'视频'}（${list.length}）</button>
     </div>
     <div class="${list.length?'grid':'empty'}">${list.length?cards:emptyHint}</div>`;
+  // 结果快照入会话缓存：刷新时直接重绘（无网络请求、无主页闪烁），选择页状态也能还原
+  try{sessionStorage.setItem('dw_data',JSON.stringify(DATA));sessionStorage.setItem('dw_tab',tab);}catch(e){}
   if(tab==='video')resolveVideos();
 }
 function setTab(t){tab=t;render();try{localStorage.setItem('dw_tab',t);}catch(e){}}
 // ×清空输入框（手动粘贴用） / 粘贴：优先直接读剪贴板；被环境拦截时弹粘贴框兜底
-function clearUrl(){$('#url').value='';document.body.classList.add('home');$('#main').innerHTML='';DATA=null;timeFilter=0;try{sessionStorage.removeItem('dw_active');localStorage.removeItem('dw_lastUrl');localStorage.setItem('dw_filter','0');}catch(e){}$('#url').focus();}
+function clearUrl(){$('#url').value='';document.body.classList.add('home');$('#main').innerHTML='';DATA=null;timeFilter=0;try{sessionStorage.removeItem('dw_active');sessionStorage.removeItem('dw_data');sessionStorage.removeItem('dw_picker');sessionStorage.removeItem('dw_pickSel');localStorage.removeItem('dw_lastUrl');localStorage.setItem('dw_filter','0');}catch(e){}$('#url').focus();}
 async function pasteUrl(){
   try{
     if(!navigator.clipboard||!navigator.clipboard.readText)throw new Error('unsupported');
@@ -582,18 +613,19 @@ async function fetchBlob(u){const r=await fetch(u);if(!r.ok)throw new Error('HTT
 
 /* ===== 多选下载选择页：缩略图网格 + 勾选 + 全选 + 底部"保存到相册" ===== */
 let pickSel=new Set();
-function openPicker(){
+function openPicker(restore){
   const list=curList();
   if(!list.length)return;
-  pickSel=new Set(list.map((_,i)=>i)); // 默认全选
+  pickSel=restore?new Set(JSON.parse(sessionStorage.getItem('dw_pickSel')||'[]').filter(i=>i<list.length)):new Set(list.map((_,i)=>i)); // 刷新恢复勾选/默认全选
   document.body.classList.add('hidevid'); // 遮住背景视频（原生图层穿透遮罩）
   document.querySelectorAll('.media video').forEach(v=>{try{v.pause();}catch(e){}});
   $('#pkTip').style.display='none'; // 重置上次的下载提示
   $('#picker').style.display='flex';
+  try{sessionStorage.setItem('dw_picker','1');}catch(e){}
   pkRender();
   prefetchPicker(); // 后台预取 blob：iOS 分享必须在手势窗口内弹出面板
 }
-function hidePicker(){$('#picker').style.display='none';document.body.classList.remove('hidevid');}
+function hidePicker(){$('#picker').style.display='none';document.body.classList.remove('hidevid');try{sessionStorage.setItem('dw_picker','0');}catch(e){}}
 function togglePick(i){pickSel.has(i)?pickSel.delete(i):pickSel.add(i);pkRender();}
 function toggleAll(){
   const list=curList();
@@ -621,6 +653,7 @@ function pkRender(){
   shareBtn.disabled=!has;dlBtn.disabled=!has;
   shareBtn.textContent=has?`📤 批量分享（${n}）`:'📤 批量分享';
   dlBtn.textContent=has?`⬇ 批量下载（${n}）`:'⬇ 批量下载';
+  try{sessionStorage.setItem('dw_pickSel',JSON.stringify([...pickSel]));}catch(e){} // 勾选状态入快照
 }
 // 取勾选项的文件 blob 列表（分享用）：并行下载，进度实时更新；图片用原图，视频统一 H.264/标准 mp4
 async function buildFiles(list,btn){
@@ -733,10 +766,10 @@ async function doPickDownload(){
     const tip=$('#pkTip');
     tip.style.display='block';
     tip.innerHTML=isIOS
-      ?('📱 iPhone：逐个点「⬇ 保存」→ 弹出分享面板 → 点「存储图像 / 存储视频」直接进相册：<br>'
+      ?('逐个点「⬇ 保存」→ 分享面板 →「存储图像 / 存储视频」：<br>'
         +rows.map((r,i)=>'<div class="pkrow"><span class="pkname">'+(r.ok?'✅':'⚠️')+' 📎 '+r.name+(r.bytes?' ('+fmtSize(r.bytes)+')':'')+'</span><a class="pkdlbtn" href="'+r.u+(r.u.includes('?')?'&':'?')+'dl='+encodeURIComponent(r.name)+'" onclick="return pkRowTap('+i+')">⬇ 保存</a></div>').join('')
         +'<button class="pkfb" onclick="doPickShare()">📥 批量分享，一次存全部到相册</button>')
-      :('✅ 已批量提交 '+auto+' 个下载任务，文件在浏览器的下载文件夹（相册/文件管理里能找到）'
+      :('✅ 已批量提交 '+auto+' 个下载任务 → 浏览器下载列表/下载文件夹查看'
         +(auto<list.length?'<br>⚠️ 有 '+(list.length-auto)+' 个文件没取到，请重试或用「批量分享」':'')
         +'<button class="pkfb" onclick="doPickShare()">📥 想直接进相册？用「批量分享」</button>');
   }catch(e){
